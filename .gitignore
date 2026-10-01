@@ -12,8 +12,8 @@ dist
 dist-ssr
 *.local
 
-# Backend uploads
-backend/uploads/
+# Old avatar uploads from the retired Express backend (kept locally, not committed)
+legacy-uploads/
 
 # Editor directories and files
 .vscode/*
@@ -28,3 +28,6 @@ backend/uploads/
 
 #.env
 .env
+
+# Local planning docs
+.plans/
