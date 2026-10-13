@@ -1,25 +1,253 @@
--- Platform security model (v2): usernames, coach paywall, invites by @username,
--- programs, and the admin area. Run once via `npm run run-sql platform.sql`,
--- after the migrations. Supersedes coach-invites.sql, invite-preview.sql and the
--- link policies in coach-client.sql (those are kept only as history).
+-- Baseline for FRESH installations of the Bro Split database (Supabase Postgres 17).
 --
--- Rules of the house:
---   * Clients never write coach/admin/subscription/invite state directly. All of it goes
---     through the security-definer functions below, which check who is calling.
---   * Coach tools are paywalled here, in the database, not just hidden in the UI.
+-- This consolidates the final state of Drizzle migrations 0000-0004 and of rls.sql, storage.sql
+-- and platform.sql into one file. It deliberately omits the statements that only cleaned up the
+-- old invitation/role model (they are no-ops on an empty database), and it must NEVER be replayed
+-- over an existing database: use the forward migrations that follow it instead.
+--
+-- Equivalence with the historical process is verified by db/tools/schema-snapshot.ts
+-- (a database upgraded through the old scripts, compared object by object with this baseline).
+-- See docs/migrations.md.
 
 -- ---------------------------------------------------------------------------
--- 0. Remove the old invite-by-email/role model
+-- 1. Tables, constraints and indexes (final state of Drizzle migrations 0000-0004)
 -- ---------------------------------------------------------------------------
-drop function if exists accept_coach_invite(uuid);
-drop function if exists get_pending_invite(uuid);
-drop function if exists get_pending_coach_invite(uuid);
-drop function if exists accept_coach_invite_signup(uuid);
+-- Constraint and index names are kept identical to the Drizzle-generated ones so that existing
+-- databases and this baseline can be compared object by object.
 
+create table "exercises" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"name" text not null,
+	"muscle_groups" text[] default '{}' not null,
+	"category" text[] default '{}' not null,
+	"brand" text,
+	"base_exercise_id" uuid,
+	"created_at" timestamp with time zone default now() not null,
+	"updated_at" timestamp with time zone default now() not null
+);
+
+create table "profiles" (
+	"id" uuid primary key not null,
+	"name" text,
+	"age" integer,
+	"avatar_url" text,
+	"created_at" timestamp with time zone default now() not null,
+	"updated_at" timestamp with time zone default now() not null,
+	"username" text,
+	"bio" text,
+	"coach_tags" text[] default '{}' not null,
+	"is_admin" boolean default false not null
+);
+
+create table "push_subscriptions" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"user_id" uuid default auth.uid() not null,
+	"subscription" jsonb not null,
+	"created_at" timestamp with time zone default now() not null
+);
+
+create table "workouts" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"user_id" uuid default auth.uid() not null,
+	"name" text not null,
+	"gym" text,
+	"date" timestamp with time zone not null,
+	"notes" text,
+	"rating" integer,
+	"is_template" boolean default false not null,
+	"duration_seconds" integer,
+	"created_at" timestamp with time zone default now() not null,
+	"updated_at" timestamp with time zone default now() not null
+);
+
+create table "workout_exercises" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"workout_id" uuid not null,
+	"exercise_id" uuid not null,
+	"exercise_name" text not null,
+	"created_at" timestamp with time zone default now() not null
+);
+
+create table "sets" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"workout_exercise_id" uuid not null,
+	"reps" integer not null,
+	"weight" double precision not null,
+	"created_at" timestamp with time zone default now() not null
+);
+
+create table "coach_client_links" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"coach_id" uuid not null,
+	"client_id" uuid not null,
+	"status" text default 'pending' not null,
+	"created_at" timestamp with time zone default now() not null,
+	"accepted_at" timestamp with time zone
+);
+
+create table "admin_invites" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"invited_user_id" uuid not null,
+	"invited_by" uuid,
+	"status" text default 'pending' not null,
+	"created_at" timestamp with time zone default now() not null
+);
+
+create table "coach_access_requests" (
+	"user_id" uuid primary key not null,
+	"created_at" timestamp with time zone default now() not null
+);
+
+create table "coach_subscriptions" (
+	"user_id" uuid primary key not null,
+	"source" text not null,
+	"granted_by" uuid,
+	"expires_at" timestamp with time zone,
+	"created_at" timestamp with time zone default now() not null
+);
+
+create table "programs" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"coach_id" uuid not null,
+	"client_id" uuid,
+	"name" text not null,
+	"status" text default 'draft' not null,
+	"message" text,
+	"sent_at" timestamp with time zone,
+	"created_at" timestamp with time zone default now() not null,
+	"updated_at" timestamp with time zone default now() not null
+);
+
+create table "program_days" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"program_id" uuid not null,
+	"name" text not null,
+	"position" integer not null
+);
+
+create table "program_exercises" (
+	"id" uuid primary key default gen_random_uuid() not null,
+	"day_id" uuid not null,
+	"position" integer not null,
+	"name" text not null,
+	"sets" integer,
+	"reps" text,
+	"rest" text,
+	"feeder" text,
+	"comment" text,
+	"link" text
+);
+
+alter table "exercises" add constraint "exercises_base_exercise_id_exercises_id_fk" foreign key ("base_exercise_id") references "public"."exercises"("id") on delete set null on update no action;
+alter table "profiles" add constraint "profiles_id_users_id_fk" foreign key ("id") references "auth"."users"("id") on delete cascade on update no action;
+alter table "push_subscriptions" add constraint "push_subscriptions_user_id_profiles_id_fk" foreign key ("user_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "workouts" add constraint "workouts_user_id_profiles_id_fk" foreign key ("user_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "workout_exercises" add constraint "workout_exercises_workout_id_workouts_id_fk" foreign key ("workout_id") references "public"."workouts"("id") on delete cascade on update no action;
+alter table "workout_exercises" add constraint "workout_exercises_exercise_id_exercises_id_fk" foreign key ("exercise_id") references "public"."exercises"("id") on delete restrict on update no action;
+alter table "sets" add constraint "sets_workout_exercise_id_workout_exercises_id_fk" foreign key ("workout_exercise_id") references "public"."workout_exercises"("id") on delete cascade on update no action;
+alter table "coach_client_links" add constraint "coach_client_links_coach_id_profiles_id_fk" foreign key ("coach_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "coach_client_links" add constraint "coach_client_links_client_id_profiles_id_fk" foreign key ("client_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "coach_client_links" add constraint "coach_client_links_pair_key" unique ("coach_id", "client_id");
+alter table "admin_invites" add constraint "admin_invites_invited_user_id_profiles_id_fk" foreign key ("invited_user_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "admin_invites" add constraint "admin_invites_invited_by_profiles_id_fk" foreign key ("invited_by") references "public"."profiles"("id") on delete set null on update no action;
+alter table "coach_access_requests" add constraint "coach_access_requests_user_id_profiles_id_fk" foreign key ("user_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "coach_subscriptions" add constraint "coach_subscriptions_user_id_profiles_id_fk" foreign key ("user_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "coach_subscriptions" add constraint "coach_subscriptions_granted_by_profiles_id_fk" foreign key ("granted_by") references "public"."profiles"("id") on delete set null on update no action;
+alter table "programs" add constraint "programs_coach_id_profiles_id_fk" foreign key ("coach_id") references "public"."profiles"("id") on delete cascade on update no action;
+alter table "programs" add constraint "programs_client_id_profiles_id_fk" foreign key ("client_id") references "public"."profiles"("id") on delete set null on update no action;
+alter table "program_days" add constraint "program_days_program_id_programs_id_fk" foreign key ("program_id") references "public"."programs"("id") on delete cascade on update no action;
+alter table "program_exercises" add constraint "program_exercises_day_id_program_days_id_fk" foreign key ("day_id") references "public"."program_days"("id") on delete cascade on update no action;
+
+-- ---------------------------------------------------------------------------
+-- 2. Row Level Security for the core training tables (was rls.sql)
+-- ---------------------------------------------------------------------------
+alter table profiles enable row level security;
+alter table exercises enable row level security;
+alter table workouts enable row level security;
+alter table workout_exercises enable row level security;
+alter table sets enable row level security;
+alter table push_subscriptions enable row level security;
+
+-- profiles: a user can only see/edit their own row.
+create policy "profiles_select_own" on profiles
+  for select using (auth.uid() = id);
+create policy "profiles_update_own" on profiles
+  for update using (auth.uid() = id);
+
+-- exercises: shared catalog. Any authenticated user can read and contribute,
+-- matching today's app behavior (nothing currently gates who can add/edit one).
+create policy "exercises_select_authenticated" on exercises
+  for select using (auth.role() = 'authenticated');
+create policy "exercises_insert_authenticated" on exercises
+  for insert with check (auth.role() = 'authenticated');
+create policy "exercises_update_authenticated" on exercises
+  for update using (auth.role() = 'authenticated');
+create policy "exercises_delete_authenticated" on exercises
+  for delete using (auth.role() = 'authenticated');
+
+-- workouts: owner-only CRUD.
+create policy "workouts_all_own" on workouts
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- workout_exercises: owner-only, via the parent workout's owner.
+create policy "workout_exercises_all_own" on workout_exercises
+  for all using (
+    exists (select 1 from workouts w where w.id = workout_id and w.user_id = auth.uid())
+  ) with check (
+    exists (select 1 from workouts w where w.id = workout_id and w.user_id = auth.uid())
+  );
+
+-- sets: owner-only, via the workout_exercise -> workout chain.
+create policy "sets_all_own" on sets
+  for all using (
+    exists (
+      select 1 from workout_exercises we
+      join workouts w on w.id = we.workout_id
+      where we.id = workout_exercise_id and w.user_id = auth.uid()
+    )
+  ) with check (
+    exists (
+      select 1 from workout_exercises we
+      join workouts w on w.id = we.workout_id
+      where we.id = workout_exercise_id and w.user_id = auth.uid()
+    )
+  );
+
+-- push_subscriptions: owner-only.
+create policy "push_subscriptions_all_own" on push_subscriptions
+  for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- 3. Avatar storage (was storage.sql)
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public)
+values ('avatars', 'avatars', true)
+on conflict (id) do nothing;
+
+create policy "avatar_public_read" on storage.objects
+  for select using (bucket_id = 'avatars');
+
+create policy "avatar_owner_write" on storage.objects
+  for insert with check (
+    bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "avatar_owner_update" on storage.objects
+  for update using (
+    bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+create policy "avatar_owner_delete" on storage.objects
+  for delete using (
+    bucket_id = 'avatars' and (storage.foldername(name))[1] = auth.uid()::text
+  );
+
+-- ---------------------------------------------------------------------------
+-- 4. Platform security model (was platform.sql, sections 1-8)
+-- ---------------------------------------------------------------------------
 -- ---------------------------------------------------------------------------
 -- 1. Usernames: lowercase handle without the '@', unique
 -- ---------------------------------------------------------------------------
-alter table profiles drop constraint if exists profiles_username_format;
 alter table profiles add constraint profiles_username_format
   check (username is null or username ~ '^[a-z0-9._]{3,20}$');
 create unique index if not exists profiles_username_key on profiles (username);
@@ -76,7 +304,6 @@ exception when unique_violation then
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function handle_new_user();
@@ -108,11 +335,6 @@ $$;
 -- ---------------------------------------------------------------------------
 alter table coach_client_links enable row level security;
 
-drop policy if exists "coach_client_links_all_as_coach" on coach_client_links;
-drop policy if exists "coach_client_links_select_as_client" on coach_client_links;
-drop policy if exists "links_select_as_coach" on coach_client_links;
-drop policy if exists "links_select_as_client" on coach_client_links;
-drop policy if exists "links_delete_as_either" on coach_client_links;
 
 create policy "links_select_as_coach" on coach_client_links
   for select using (auth.uid() = coach_id);
@@ -122,10 +344,6 @@ create policy "links_delete_as_either" on coach_client_links
   for delete using (auth.uid() = coach_id or auth.uid() = client_id);
 
 -- A coach's read access into an accepted client's data now also requires an active coach plan.
-drop policy if exists "profiles_select_as_coach" on profiles;
-drop policy if exists "workouts_select_as_coach" on workouts;
-drop policy if exists "workout_exercises_select_as_coach" on workout_exercises;
-drop policy if exists "sets_select_as_coach" on sets;
 
 create policy "profiles_select_as_coach" on profiles
   for select using (
@@ -160,7 +378,6 @@ create policy "sets_select_as_coach" on sets
   );
 
 -- A client can read the profile of a coach they're linked to (for the client dashboard).
-drop policy if exists "profiles_select_coach_as_client" on profiles;
 create policy "profiles_select_coach_as_client" on profiles
   for select using (
     exists (
@@ -249,15 +466,11 @@ alter table coach_access_requests enable row level security;
 alter table admin_invites enable row level security;
 -- The last three have no policies on purpose: reachable only through the functions here.
 
-drop policy if exists "programs_select_coach" on programs;
-drop policy if exists "programs_select_client" on programs;
-drop policy if exists "programs_delete_coach" on programs;
 create policy "programs_select_coach" on programs for select using (coach_id = auth.uid());
 create policy "programs_select_client" on programs for select
   using (client_id = auth.uid() and status = 'sent');
 create policy "programs_delete_coach" on programs for delete using (coach_id = auth.uid());
 
-drop policy if exists "program_days_select" on program_days;
 create policy "program_days_select" on program_days for select using (
   exists (
     select 1 from programs p where p.id = program_id
@@ -265,7 +478,6 @@ create policy "program_days_select" on program_days for select using (
   )
 );
 
-drop policy if exists "program_exercises_select" on program_exercises;
 create policy "program_exercises_select" on program_exercises for select using (
   exists (
     select 1 from program_days d join programs p on p.id = d.program_id
