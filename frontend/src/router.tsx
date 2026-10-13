@@ -6,8 +6,7 @@ import Home from './pages/Home';
 import Profile from './pages/Profile';
 import Exercises from './pages/Exercises';
 import ActiveWorkout from './pages/ActiveWorkout';
-import Settings from './pages/Settings';
-import History from './pages/History';
+import Volume from './pages/Volume';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
 import ChooseUsername from './pages/ChooseUsername';
@@ -37,8 +36,10 @@ export const router = createBrowserRouter([
           { path: '/profile', element: <Profile /> },
           { path: '/workouts', element: <Exercises /> },
           { path: '/workouts/:id', element: <ActiveWorkout /> },
-          { path: '/settings', element: <Settings /> },
-          { path: '/history', element: <History /> },
+          { path: '/volume', element: <Volume /> },
+          // History moved onto the Workout (+) page and Settings into the profile; old links still land somewhere sensible.
+          { path: '/history', element: <Navigate to="/" replace /> },
+          { path: '/settings', element: <Navigate to="/profile" replace /> },
           { path: '/client', element: <ClientDashboard /> },
           { path: '/client/programs/:id', element: <ClientProgram /> },
         ],

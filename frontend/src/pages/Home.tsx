@@ -3,10 +3,11 @@ import { useNavigate } from 'react-router-dom';
 import { createWorkout } from '../api/workouts';
 import { useWorkouts } from '../hooks/useWorkouts';
 import { WorkoutCard } from '../components/WorkoutCard';
+import { WorkoutHistoryList } from '../components/WorkoutHistoryList';
 import { GymPickerModal } from '../components/GymPickerModal';
 
 export default function Home() {
-  const { workouts, loading } = useWorkouts();
+  const { workouts, setWorkouts, loading } = useWorkouts();
   const navigate = useNavigate();
   const [starting, setStarting] = useState(false);
   const [gymPickerOpen, setGymPickerOpen] = useState(false);
@@ -70,6 +71,10 @@ export default function Home() {
             ))}
           </div>
         )}
+      </div>
+      <div className="section">
+        <h3>History</h3>
+        <WorkoutHistoryList workouts={workouts} setWorkouts={setWorkouts} loading={loading} />
       </div>
     </div>
   );

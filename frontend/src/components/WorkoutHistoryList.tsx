@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { useWorkouts } from "../hooks/useWorkouts";
-import { WorkoutDetailModal } from "../components/WorkoutDetailModal";
+import type { Dispatch, SetStateAction } from "react";
+import { WorkoutDetailModal } from "./WorkoutDetailModal";
 import type { IWorkout } from "../types/Workout";
 
 const RATING_LABEL = ["", "Bad", "Okay", "Good", "Great", "Amazing"];
@@ -21,20 +21,20 @@ function formatDuration(seconds: number) {
   return `${seconds}s`;
 }
 
-export default function History() {
-  const { workouts, setWorkouts, loading } = useWorkouts();
+interface Props {
+  workouts: IWorkout[];
+  setWorkouts: Dispatch<SetStateAction<IWorkout[]>>;
+  loading: boolean;
+}
+
+/** The user's own workouts, newest first, with the detail modal. Lives on the Workout (+) page. */
+export function WorkoutHistoryList({ workouts, setWorkouts, loading }: Props) {
   const [selectedWorkout, setSelectedWorkout] = useState<IWorkout | null>(null);
 
-  const sorted = [...workouts].sort(
-    (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-  );
+  const sorted = [...workouts].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
-    <div>
-      <div className="page-header">
-        <h5>History</h5>
-      </div>
-
+    <>
       {loading ? (
         <p>Loading...</p>
       ) : sorted.length === 0 ? (
@@ -44,10 +44,7 @@ export default function History() {
       ) : (
         <div className="workout-list">
           {sorted.map((workout) => {
-            const totalSets = workout.exercises.reduce(
-              (n, ex) => n + ex.sets.length,
-              0
-            );
+            const totalSets = workout.exercises.reduce((n, ex) => n + ex.sets.length, 0);
             return (
               <div
                 key={workout._id}
@@ -63,16 +60,10 @@ export default function History() {
                 </div>
                 <div className="history-card__meta">
                   <span>{totalSets} sets</span>
-                  {workout.durationSeconds ? (
-                    <span>{formatDuration(workout.durationSeconds)}</span>
-                  ) : null}
-                  {workout.isTemplate ? (
-                    <span className="history-card__template-tag">template</span>
-                  ) : null}
+                  {workout.durationSeconds ? <span>{formatDuration(workout.durationSeconds)}</span> : null}
+                  {workout.isTemplate ? <span className="history-card__template-tag">template</span> : null}
                   {workout.rating != null && (
-                    <span className="history-card__rating">
-                      Felt {RATING_LABEL[workout.rating]}
-                    </span>
+                    <span className="history-card__rating">Felt {RATING_LABEL[workout.rating]}</span>
                   )}
                 </div>
               </div>
@@ -95,6 +86,6 @@ export default function History() {
           }}
         />
       )}
-    </div>
+    </>
   );
 }
