@@ -1,3 +1,4 @@
+import type { Json } from '@bro-split/database';
 import { supabase } from './supabaseClient';
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
@@ -28,6 +29,6 @@ export async function enablePushNotifications(): Promise<void> {
     applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
   });
 
-  const { error } = await supabase.from('push_subscriptions').insert({ subscription: subscription.toJSON() });
+  const { error } = await supabase.from('push_subscriptions').insert({ subscription: subscription.toJSON() as { [key: string]: Json | undefined } });
   if (error) throw error;
 }

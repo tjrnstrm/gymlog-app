@@ -1,4 +1,8 @@
-export type LinkStatus = 'pending' | 'accepted' | 'declined';
+/**
+ * pending -> accepted | declined | cancelled (by the coach); accepted -> ended (by either party).
+ * declined, cancelled and ended links can be re-opened by a new invite, which needs fresh consent.
+ */
+export type LinkStatus = 'pending' | 'accepted' | 'declined' | 'ended' | 'cancelled';
 
 /** One of a coach's clients (or pending invites), as the coach sees it. */
 export interface ICoachClient {
@@ -19,7 +23,10 @@ export interface IMyCoach {
   name: string;
   bio: string;
   coachTags: string[];
+  avatarUrl: string | null;
   status: LinkStatus;
+  /** When the client accepted; null while the invite is pending. */
+  acceptedAt: string | null;
 }
 
 export interface ICoachListing {

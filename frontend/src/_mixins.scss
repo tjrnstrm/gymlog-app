@@ -1,5 +1,4 @@
 @use 'variables' as *;
-@use 'sass:map';
 
 // Mixins
 
@@ -12,7 +11,7 @@
 @mixin btn-base($color: $text-secondary) {
   background-color: transparent;
   border: 1px solid $border;
-  border-radius: 8px;
+  border-radius: $radius-button;
   color: $color;
   cursor: pointer;
   &:hover {
@@ -29,18 +28,17 @@
   flex-shrink: 0;
 }
 
+// A matte panel: slightly lighter than the page, lit along its top edge, lifted by a soft shadow.
+@mixin matte($bg: $bg-surface) {
+  background: $bg;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: $shadow-matte;
+}
+
 // Placeholders
 
 %card {
-  background-color: $bg-surface;
-  border: 1px solid $border;
-  border-radius: 8px;
+  @include matte;
+  border-radius: $radius-card;
   padding: 1rem;
 }
-
-// Maps
-
-$btn-variants: (
-  'success': $success,
-  'danger': $accent,
-);

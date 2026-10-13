@@ -1,7 +1,7 @@
 import { uploadAvatar, updateProfile } from '../api/Profile';
 import { useProfile } from '../hooks/useProfile';
 import { useAuth } from '../hooks/useAuth';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { FaUser } from 'react-icons/fa';
 
 export default function EditProfile({ onSaved }: { onSaved?: () => void }) {
@@ -14,14 +14,17 @@ export default function EditProfile({ onSaved }: { onSaved?: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Fill the form when the profile loads or changes (adjusting state during render, not in an effect).
+  const [syncedProfile, setSyncedProfile] = useState(profile);
+  if (profile !== syncedProfile) {
+    setSyncedProfile(profile);
     if (profile) {
       setName(profile.name ?? '');
       setAge(profile.age ?? 0);
       setBio(profile.bio ?? '');
       setTags((profile.coachTags ?? []).join(', '));
     }
-  }, [profile]);
+  }
 
   const handleUpload = async (e: { preventDefault: () => void }) => {
     e.preventDefault();

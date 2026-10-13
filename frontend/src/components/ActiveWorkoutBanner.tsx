@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useActiveWorkout } from "../context/ActiveWorkoutContext";
+import { useActiveWorkout } from "../hooks/useActiveWorkout";
 
 function formatDuration(seconds: number) {
   const h = Math.floor(seconds / 3600);

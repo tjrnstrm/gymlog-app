@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { FaChevronDown, FaChevronUp, FaLink, FaThumbtack } from "react-icons/fa";
 import { getProgram } from "../../api/programs";
-import { startWorkoutFromDay } from "../../api/workouts";
+import { AmbiguousExercisesError, startWorkoutFromDay } from "../../api/workouts";
+import type { AmbiguousExercise } from "../../api/workouts";
 import type { IProgram, IProgramExercise } from "../../types/Platform";
 
 const summary = (e: IProgramExercise) =>
@@ -55,6 +56,9 @@ export default function ClientProgram() {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  // Programme exercises whose name matches more than one of the user's exercises; they pick which.
+  const [ambiguous, setAmbiguous] = useState<AmbiguousExercise[] | null>(null);
+  const [choices, setChoices] = useState<Record<string, string>>({});
 
   useEffect(() => {
     getProgram(id)
@@ -67,7 +71,7 @@ export default function ClientProgram() {
 
   const day = program.days[dayIndex];
 
-  async function handleStart() {
+  async function handleStart(chosen: Record<string, string> = {}) {
     if (!day || day.exercises.length === 0) return;
     setStarting(true);
     setError(null);
@@ -75,10 +79,16 @@ export default function ClientProgram() {
       const workoutId = await startWorkoutFromDay(
         day.name,
         day.exercises.map((e) => ({ name: e.name, sets: e.sets, reps: e.reps })),
+        chosen,
       );
       navigate(`/workouts/${workoutId}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not start the workout");
+      if (err instanceof AmbiguousExercisesError) {
+        setAmbiguous(err.ambiguous);
+        setChoices(chosen);
+      } else {
+        setError(err instanceof Error ? err.message : "Could not start the workout");
+      }
       setStarting(false);
     }
   }
@@ -118,9 +128,38 @@ export default function ClientProgram() {
             <h2 className="display">{day.name}</h2>
             <span className="muted">{day.exercises.length} {day.exercises.length === 1 ? "exercise" : "exercises"}</span>
           </div>
-          <button type="button" className="btn-primary" onClick={() => void handleStart()} disabled={starting || day.exercises.length === 0}>
-            {starting ? "Starting..." : "Start this workout"}
-          </button>
+          {ambiguous ? (
+            <div className="card stack stack--tight">
+              <h3 className="display">Which exercise do you mean?</h3>
+              <p className="muted">You have more than one exercise with these names. Pick the one to log.</p>
+              {ambiguous.map((a) => (
+                <label key={a.key}>
+                  {a.name}
+                  <select value={choices[a.key] ?? ""} onChange={(e) => setChoices({ ...choices, [a.key]: e.target.value })}>
+                    <option value="" disabled>Choose…</option>
+                    {a.options.map((o, i) => (
+                      <option key={o.id} value={o.id}>{o.name} — {o.isGlobal ? "shared" : "yours"} ({i + 1})</option>
+                    ))}
+                  </select>
+                </label>
+              ))}
+              <div className="row">
+                <button
+                  type="button"
+                  className="btn-primary grow"
+                  disabled={starting || ambiguous.some((a) => !choices[a.key])}
+                  onClick={() => void handleStart(choices)}
+                >
+                  {starting ? "Starting..." : "Start workout"}
+                </button>
+                <button type="button" className="grow" onClick={() => setAmbiguous(null)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <button type="button" className="btn-primary" onClick={() => void handleStart()} disabled={starting || day.exercises.length === 0}>
+              {starting ? "Starting..." : "Start this workout"}
+            </button>
+          )}
           <div className="stack stack--tight">
             {day.exercises.map((e) => (
               <ExerciseRow key={e.id} exercise={e} open={openKey === e.id} onToggle={() => setOpenKey(openKey === e.id ? null : e.id)} />

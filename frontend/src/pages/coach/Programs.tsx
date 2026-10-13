@@ -33,7 +33,7 @@ export default function Programs() {
   }
 
   async function handleDelete(program: IProgram) {
-    if (!window.confirm(`Delete "${program.name}"? ${program.status === "sent" ? "The client will lose it too." : ""}`)) return;
+    if (!window.confirm(`Delete the draft "${program.name}"?`)) return;
     try {
       await deleteProgram(program.id);
       setReload((n) => n + 1);
@@ -73,7 +73,9 @@ export default function Programs() {
                 <div className="row">
                   <Link to={`/coach/programs/${p.id}`} className="btn-small btn-link">Edit</Link>
                   <button type="button" className="btn-small" onClick={() => void handleDuplicate(p.id)}>Duplicate</button>
-                  <button type="button" className="btn-small btn-small--danger" onClick={() => void handleDelete(p)}>Delete</button>
+                  {p.status === "draft" && (
+                    <button type="button" className="btn-small btn-small--danger" onClick={() => void handleDelete(p)}>Delete</button>
+                  )}
                 </div>
               </div>
             );

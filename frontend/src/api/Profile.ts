@@ -1,16 +1,8 @@
 import { supabase } from '../lib/supabaseClient';
+import type { TableRow, TableUpdate } from '@bro-split/database';
 import type { IProfile } from '../types/Profile';
 
-interface ProfileRow {
-  id: string;
-  username: string | null;
-  name: string | null;
-  age: number | null;
-  avatar_url: string | null;
-  bio: string | null;
-  coach_tags: string[] | null;
-  is_admin: boolean;
-}
+type ProfileRow = TableRow<'profiles'>;
 
 function mapProfile(row: ProfileRow): IProfile {
   return {
@@ -43,7 +35,7 @@ export const getProfile = async (): Promise<IProfile> => {
 export const updateProfile = async (data: Partial<IProfile>): Promise<IProfile> => {
   const userId = await currentUserId();
   // Only these columns are writable by the app; the database refuses anything else.
-  const payload: Record<string, unknown> = {};
+  const payload: TableUpdate<'profiles'> = {};
   if (data.name !== undefined) payload.name = data.name;
   if (data.age !== undefined) payload.age = data.age;
   if (data.avatarUrl !== undefined) payload.avatar_url = data.avatarUrl;

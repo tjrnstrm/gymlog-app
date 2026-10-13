@@ -1,37 +1,15 @@
+import type { QueryData } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabaseClient';
 import type { IProgram, IProgramDay, IProgramExercise } from '../types/Platform';
 
 const PROGRAM_SELECT =
-  '*, program_days(id, name, position, program_exercises(id, position, name, sets, reps, rest, feeder, comment, link))';
+  '*, program_days(id, name, position, program_exercises(id, position, name, sets, reps, rest, feeder, comment, link))' as const;
 
-interface ExerciseRow {
-  id: string;
-  position: number;
-  name: string;
-  sets: number | null;
-  reps: string | null;
-  rest: string | null;
-  feeder: string | null;
-  comment: string | null;
-  link: string | null;
-}
-interface DayRow {
-  id: string;
-  name: string;
-  position: number;
-  program_exercises: ExerciseRow[] | null;
-}
-interface ProgramRow {
-  id: string;
-  coach_id: string;
-  name: string;
-  status: 'draft' | 'sent';
-  client_id: string | null;
-  message: string | null;
-  sent_at: string | null;
-  updated_at: string;
-  program_days: DayRow[] | null;
-}
+const programsQuery = () => supabase.from('programs').select(PROGRAM_SELECT);
+// Row types come from the query itself, so they follow the generated schema.
+type ProgramRow = QueryData<ReturnType<typeof programsQuery>>[number];
+type DayRow = ProgramRow['program_days'][number];
+type ExerciseRow = DayRow['program_exercises'][number];
 
 function mapExercise(r: ExerciseRow): IProgramExercise {
   return {
@@ -59,7 +37,8 @@ function mapProgram(r: ProgramRow): IProgram {
     id: r.id,
     coachId: r.coach_id,
     name: r.name,
-    status: r.status,
+    // The database constrains status to these two values (programs_status_check).
+    status: r.status as IProgram['status'],
     clientId: r.client_id,
     message: r.message ?? '',
     sentAt: r.sent_at,
@@ -70,18 +49,15 @@ function mapProgram(r: ProgramRow): IProgram {
 
 /** Programs the signed-in user can see: their own drafts/sent programs (coach) or ones sent to them (client). */
 export const getPrograms = async (): Promise<IProgram[]> => {
-  const { data, error } = await supabase
-    .from('programs')
-    .select(PROGRAM_SELECT)
-    .order('updated_at', { ascending: false });
+  const { data, error } = await programsQuery().order('updated_at', { ascending: false });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as ProgramRow[]).map(mapProgram);
+  return (data ?? []).map(mapProgram);
 };
 
 export const getProgram = async (id: string): Promise<IProgram> => {
-  const { data, error } = await supabase.from('programs').select(PROGRAM_SELECT).eq('id', id).single();
+  const { data, error } = await programsQuery().eq('id', id).single();
   if (error) throw new Error(error.message);
-  return mapProgram(data as ProgramRow);
+  return mapProgram(data);
 };
 
 export interface ProgramDraft {

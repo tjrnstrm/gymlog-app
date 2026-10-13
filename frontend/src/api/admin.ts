@@ -2,23 +2,6 @@ import { supabase } from '../lib/supabaseClient';
 import { normalizeUsername } from './username';
 import type { IAdminMember, IAdminOverview, IAdminUser } from '../types/Platform';
 
-interface UserRow {
-  id: string;
-  username: string | null;
-  name: string | null;
-  is_admin: boolean;
-  coach_active: boolean;
-  coach_source: 'granted' | 'paid' | null;
-  requested: boolean;
-  is_client: boolean;
-}
-interface MemberRow {
-  id: string;
-  username: string | null;
-  name: string | null;
-  status: 'admin' | 'pending';
-}
-
 export const getOverview = async (): Promise<IAdminOverview> => {
   const { data, error } = await supabase.rpc('admin_overview');
   if (error) throw new Error(error.message);
@@ -29,13 +12,14 @@ export const getOverview = async (): Promise<IAdminOverview> => {
 export const listUsers = async (search: string): Promise<IAdminUser[]> => {
   const { data, error } = await supabase.rpc('admin_list_users', { p_search: search });
   if (error) throw new Error(error.message);
-  return ((data ?? []) as UserRow[]).map((r) => ({
+  return (data ?? []).map((r) => ({
     id: r.id,
     username: r.username ?? '',
     name: r.name ?? '',
     isAdmin: r.is_admin,
     coachActive: r.coach_active,
-    coachSource: r.coach_source,
+    // admin_list_users returns the subscription source, which is constrained to these values.
+    coachSource: r.coach_source as IAdminUser['coachSource'],
     requested: r.requested,
     isClient: r.is_client,
   }));
@@ -54,11 +38,11 @@ export const revokeCoach = async (username: string): Promise<void> => {
 export const listAdmins = async (): Promise<IAdminMember[]> => {
   const { data, error } = await supabase.rpc('admin_list_admins');
   if (error) throw new Error(error.message);
-  return ((data ?? []) as MemberRow[]).map((r) => ({
+  return (data ?? []).map((r) => ({
     id: r.id,
     username: r.username ?? '',
     name: r.name ?? '',
-    status: r.status,
+    status: r.status as IAdminMember['status'],
   }));
 };
 

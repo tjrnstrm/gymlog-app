@@ -1,7 +1,7 @@
 import { Outlet, useLocation } from 'react-router-dom';
 import { Navbar } from '../components/Navbar';
 import { ActiveWorkoutBanner } from '../components/ActiveWorkoutBanner';
-import { useActiveWorkout } from '../context/ActiveWorkoutContext';
+import { useActiveWorkout } from '../hooks/useActiveWorkout';
 
 export default function MainLayout() {
   const { activeWorkoutId } = useActiveWorkout();

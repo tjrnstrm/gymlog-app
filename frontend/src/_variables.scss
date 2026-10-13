@@ -1,22 +1,46 @@
-$main-font: Inter, Sans-serif;
+// Theme: Mono, matte surfaces, a soft glow behind the page, Outfit in thin weights.
+// There is no signature hue. Emphasis comes from the inverted (light-on-dark) button and from weight.
 
-$bg-primary: #0f0f0f; // main page background
-$bg-surface: #1a1a1a; // cards, panels
-$bg-elevated: #242424; // inputs, hover states
+$main-font: 'Outfit Variable', 'Outfit', system-ui, sans-serif;
+$display-font: $main-font;
+
+// Weights (Outfit is a variable font). Thin for display, light for text, medium for emphasis.
+$fw-display: 200;
+$fw-body: 300;
+$fw-medium: 400;
+$fw-strong: 500;
+
+$bg-primary: #0e0e0e; // page background
+$bg-surface: #1c1c1c; // matte panels and cards
+$bg-elevated: #272727; // inputs, rows inside a panel, hover states
 
 // Text
-$text-primary: #f0f0f0; // headings, main text
-$text-secondary: #a0a0a0; // labels, subtitles
-$text-muted: #606060; // placeholders, disabled
+$text-primary: #f5f5f5; // headings, main text
+$text-secondary: #b3b3b3; // labels, subtitles
+$text-muted: #7c7c7c; // placeholders, disabled
 
-// Accent
-$accent: #e63946; // red — buttons, highlights
-$accent-hover: #c1121f; // darker red on hover
+// "Accent": no hue. Used for the primary button, active states and the one thing to look at.
+$accent: #f5f5f5;
+$accent-hover: #ffffff;
+$on-accent: #0e0e0e; // text on top of $accent
 
 // Utility
-$border: #2e2e2e; // dividers, card borders
-$success: #4caf50; // confirmation, completed
-$warning: #ff9800; // caution states
+$border: #2a2a2a; // dividers, card borders
+$danger: #e5726c; // errors and destructive actions only, never decoration
+$success: #8fcfa6; // confirmations only (a saved note, a valid field)
+
+// Shape: soft corners
+$radius-card: 14px;
+$radius-button: 10px;
+$radius-small: 8px;
+
+// Matte: a lit top edge and a soft drop shadow, no blur
+$shadow-matte: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 10px 28px rgba(0, 0, 0, 0.5);
+
+// The glow behind the page: two faint light sources over the base color
+$glow:
+  radial-gradient(70% 45% at 85% -5%, rgba(255, 255, 255, 0.16), transparent 62%),
+  radial-gradient(60% 40% at -10% 105%, rgba(255, 255, 255, 0.09), transparent 60%);
 
 // Widths
 $max-width: 480px; // content never gets wider than this

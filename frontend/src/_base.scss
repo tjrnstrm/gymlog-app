@@ -7,14 +7,47 @@
 }
 
 body {
-  background-color: #080808;
+  background-color: $bg-primary;
+  font-family: $main-font;
+  font-weight: $fw-body;
+  -webkit-font-smoothing: antialiased;
+}
+
+// The glow is a fixed layer behind everything, so it stays put while the page scrolls.
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: $glow;
+  pointer-events: none;
+}
+
+// Browsers make headings bold by default; the theme is thin.
+h1,
+h2,
+h3 {
+  font-weight: $fw-display;
+}
+
+h4,
+h5,
+h6 {
+  font-weight: $fw-medium;
+}
+
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
 }
 
 #content {
   max-width: $max-width;
   margin: 0 auto;
   padding: 0 $content-padding 7rem;
-  background-color: $bg-primary;
+  background-color: transparent;
   color: $text-primary;
   font-family: $main-font;
   min-height: 100vh;

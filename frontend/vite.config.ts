@@ -13,8 +13,8 @@ export default defineConfig({
         name: 'Bro Split',
         short_name: 'Bro Split',
         description: 'Coach–client training platform',
-        theme_color: '#0f0f0f',
-        background_color: '#0f0f0f',
+        theme_color: '#0e0e0e',
+        background_color: '#0e0e0e',
         display: 'standalone',
         icons: [
           { src: 'pwa-64x64.png', sizes: '64x64', type: 'image/png' },

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { getWorkouts } from '../api/workouts';
+import { getMyWorkouts } from '../api/workouts';
 import type { IWorkout } from '../types/Workout';
 
 export function useWorkouts() {
@@ -8,7 +8,7 @@ export function useWorkouts() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    getWorkouts()
+    getMyWorkouts()
       .then(setWorkouts)
       .catch(() => setError('Failed to load workouts'))
       .finally(() => setLoading(false));

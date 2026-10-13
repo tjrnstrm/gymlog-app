@@ -1,21 +1,6 @@
-import { createContext, useCallback, useContext, useState } from "react";
+import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
-
-interface ActiveWorkoutContextType {
-  activeWorkoutId: string | null;
-  activeWorkoutName: string;
-  activeWorkoutDate: string | null;
-  setActiveWorkout: (id: string, name: string, date: string) => void;
-  clearActiveWorkout: () => void;
-}
-
-const ActiveWorkoutContext = createContext<ActiveWorkoutContextType>({
-  activeWorkoutId: null,
-  activeWorkoutName: "",
-  activeWorkoutDate: null,
-  setActiveWorkout: () => {},
-  clearActiveWorkout: () => {},
-});
+import { ActiveWorkoutContext } from "./activeWorkoutContextObject";
 
 export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
   const [activeWorkoutId, setActiveWorkoutId] = useState<string | null>(null);
@@ -42,5 +27,3 @@ export function ActiveWorkoutProvider({ children }: { children: ReactNode }) {
     </ActiveWorkoutContext.Provider>
   );
 }
-
-export const useActiveWorkout = () => useContext(ActiveWorkoutContext);

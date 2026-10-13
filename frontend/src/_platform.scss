@@ -6,24 +6,23 @@
 
 $ctl: #6b6b6b; // borders of interactive controls (3:1 against the dark surfaces)
 $muted: #8a8a8a; // readable secondary text (the older $text-muted is too dim for body text)
-$accent-text: #ff6b76; // accent as text/links on dark backgrounds
-$split-client: #d0d0d0;
-$split-neither: #4a4a4a;
+$accent-text: $text-primary; // emphasis as text/links (links are underlined)
+$split-client: #8c8c8c;
+$split-neither: #3a3a3a;
 
 /* ---------- utilities ---------- */
 
 .display {
-  font-family: 'Barlow Condensed', $main-font;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-  line-height: 1.05;
+  font-family: $display-font;
+  font-weight: $fw-display;
+  letter-spacing: 0.01em;
+  line-height: 1.1;
 }
 .page-title { margin: 0; font-size: 2.4rem; }
 .eyebrow {
   margin: 0;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: $fw-strong;
   letter-spacing: 0.12em;
   text-transform: uppercase;
   color: $muted;
@@ -42,18 +41,16 @@ $split-neither: #4a4a4a;
 .row--baseline { align-items: baseline; }
 
 .card {
-  background: $bg-surface;
-  border: 1px solid $border;
-  border-radius: 12px;
+  @include matte;
+  border-radius: $radius-card;
   padding: 1.25rem;
   min-width: 0;
   &__title {
     margin: 0;
-    font-family: 'Barlow Condensed', $main-font;
-    font-weight: 700;
-    text-transform: uppercase;
-    font-size: 1.6rem;
-    line-height: 1.05;
+    font-family: $display-font;
+    font-weight: $fw-display;
+    font-size: 1.7rem;
+    line-height: 1.1;
   }
   p { margin: 0; }
 }
@@ -62,7 +59,7 @@ $split-neither: #4a4a4a;
   display: inline-flex;
   align-items: center;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: $fw-strong;
   letter-spacing: 0.04em;
   color: $text-secondary;
   border: 1px solid $ctl;
@@ -80,7 +77,7 @@ $split-neither: #4a4a4a;
   background: $bg-elevated;
   border: 1px solid $border;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: $fw-strong;
   color: $text-primary;
 }
 
@@ -89,7 +86,7 @@ $split-neither: #4a4a4a;
   align-items: center;
   gap: 0.5rem;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: $fw-strong;
   &::before {
     content: '';
     width: 8px;
@@ -98,17 +95,19 @@ $split-neither: #4a4a4a;
     background: currentColor;
     flex-shrink: 0;
   }
-  &--accepted { color: $success; }
-  &--pending { color: $warning; }
+  &--accepted { color: $text-primary; }
+  &--pending { color: $text-secondary; &::before { background: transparent; border: 1.5px solid currentColor; } }
   &--declined { color: $muted; }
+  &--ended { color: $muted; }
+  &--cancelled { color: $muted; }
 }
 
 .form-notice { color: $success; font-size: 0.9rem; }
 .field-hint {
   font-size: 0.75rem;
-  font-weight: 400;
+  font-weight: $fw-body;
   &--ok { color: $success; }
-  &--bad { color: $accent-text; }
+  &--bad { color: $danger; }
   &--muted { color: $muted; }
 }
 
@@ -118,10 +117,10 @@ button:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .btn-primary,
 a.btn-primary {
-  background: $accent-hover;
-  border-color: $accent-hover;
-  color: #fff;
-  &:hover { background: $accent; border-color: $accent; color: #fff; }
+  background: $accent;
+  border-color: $accent;
+  color: $on-accent;
+  &:hover { background: $accent-hover; border-color: $accent-hover; color: $on-accent; }
 }
 .btn-link {
   display: inline-flex;
@@ -131,7 +130,7 @@ a.btn-primary {
   border: 1px solid $ctl;
   border-radius: 8px;
   color: $text-primary;
-  font-weight: 600;
+  font-weight: $fw-strong;
   text-decoration: none;
   &:hover { border-color: $accent; color: $accent; }
 }
@@ -141,14 +140,14 @@ a.btn-primary {
   min-height: 36px;
   font-size: 0.85rem;
   border-color: $ctl;
-  &--danger { color: $accent-text; border-color: $accent; }
+  &--danger { color: $danger; border-color: $danger; }
 }
 .btn-danger-outline {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: $accent-text;
-  border-color: $accent;
+  color: $danger;
+  border-color: $danger;
 }
 .btn-start { align-self: flex-start; }
 
@@ -158,7 +157,7 @@ a.btn-primary {
   border-radius: 999px;
   font-size: 0.9rem;
   border-color: $ctl;
-  &--active { background: $accent-hover; border-color: $accent-hover; color: #fff; }
+  &--active { background: $accent; border-color: $accent; color: $on-accent; }
 }
 
 /* ---------- fields (inside the platform pages) ---------- */
@@ -182,14 +181,14 @@ a.btn-primary {
     flex-direction: column;
     gap: 0.4rem;
     font-size: 0.8rem;
-    font-weight: 600;
+    font-weight: $fw-strong;
     color: $text-secondary;
   }
   label > input,
   label > select,
   label > textarea { @extend %control; }
   textarea { resize: vertical; line-height: 1.4; }
-  a:not([class]) { color: $accent-text; }
+  a:not([class]) { color: $accent-text; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
 }
 
 .create-profile-form textarea {
@@ -208,7 +207,7 @@ a.btn-primary {
   border: 1px solid $ctl;
   border-radius: 8px;
   &:focus-within { border-color: $accent; }
-  &__at { padding-left: 0.8rem; color: $accent-text; font-weight: 600; font-size: 1rem; }
+  &__at { padding-left: 0.8rem; color: $accent-text; font-weight: $fw-strong; font-size: 1rem; }
   input {
     flex-grow: 1;
     min-width: 0;
@@ -240,7 +239,7 @@ a.btn-primary {
   align-items: center;
   justify-content: center;
   padding: 1.5rem;
-  background: $bg-primary;
+  background: transparent;
   color: $text-primary;
   font-family: $main-font;
 }
@@ -251,14 +250,13 @@ a.btn-primary {
   flex-direction: column;
   gap: 1.25rem;
   padding: 2rem;
-  background: $bg-surface;
-  border: 1px solid $border;
-  border-radius: 16px;
+  @include matte;
+  border-radius: 18px;
   p { margin: 0; color: $text-secondary; }
-  a { color: $accent-text; }
+  a { color: $accent-text; text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: 1px; }
   &__brand { display: flex; flex-direction: column; gap: 0.25rem; }
-  &__name { font-family: 'Barlow Condensed', $main-font; font-weight: 700; text-transform: uppercase; font-size: 2rem; line-height: 1; }
-  &__tagline { font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: $muted; font-weight: 600; }
+  &__name { font-family: $display-font; font-weight: $fw-display; font-size: 2.2rem; line-height: 1; }
+  &__tagline { font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: $muted; font-weight: $fw-strong; }
   &__title { margin: 0; font-size: 1.8rem; }
   &__switch { text-align: center; font-size: 0.9rem; }
 }
@@ -268,7 +266,7 @@ a.btn-primary {
 .sidebar-layout {
   display: flex;
   min-height: 100vh;
-  background: $bg-primary;
+  background: transparent;
   color: $text-primary;
   font-family: $main-font;
 
@@ -288,7 +286,7 @@ a.btn-primary {
   }
   &__brand { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; padding: 0 0.5rem; }
   &__name { font-size: 1.9rem; }
-  &__tagline { font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: $muted; font-weight: 600; }
+  &__tagline { font-size: 0.7rem; letter-spacing: 0.14em; text-transform: uppercase; color: $muted; font-weight: $fw-strong; }
   &__nav {
     display: flex;
     flex-direction: column;
@@ -305,7 +303,7 @@ a.btn-primary {
     border-radius: 8px;
     color: $text-secondary;
     text-decoration: none;
-    font-weight: 500;
+    font-weight: $fw-medium;
     &:hover { color: $text-primary; background: $bg-elevated; }
     &--active { color: $accent-text; background: $bg-elevated; }
   }
@@ -366,7 +364,7 @@ a.btn-primary {
     border: 1px solid $border;
     color: $accent-text;
   }
-  &__sent { color: $text-primary !important; font-weight: 600; }
+  &__sent { color: $text-primary !important; font-weight: $fw-strong; }
 }
 
 /* ---------- tables + lists ---------- */
@@ -377,7 +375,7 @@ a.btn-primary {
   th {
     text-align: left;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: $fw-strong;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: $muted;
@@ -389,10 +387,9 @@ a.btn-primary {
 .program-row {
   flex-wrap: wrap;
   &__name {
-    font-family: 'Barlow Condensed', $main-font;
-    font-weight: 700;
-    text-transform: uppercase;
-    font-size: 1.5rem;
+    font-family: $display-font;
+    font-weight: $fw-display;
+    font-size: 1.6rem;
     color: $text-primary;
     text-decoration: none;
     &:hover { color: $accent-text; }
@@ -413,7 +410,7 @@ a.btn-primary {
   &__legend {
     gap: 1.5rem;
     align-items: flex-start;
-    > div { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; font-weight: 600; font-size: 0.85rem; color: $text-secondary; }
+    > div { flex: 1; display: flex; flex-direction: column; gap: 0.25rem; font-weight: $fw-strong; font-size: 0.85rem; color: $text-secondary; }
   }
 }
 .split-bar {
@@ -478,7 +475,7 @@ a.btn-primary {
     background: transparent;
     text-align: left;
     color: $text-primary;
-    font-weight: 400;
+    font-weight: $fw-body;
   }
   &__badge {
     @include flex-center;
@@ -489,9 +486,9 @@ a.btn-primary {
     background: $bg-elevated;
     color: $text-secondary;
     font-size: 0.8rem;
-    font-weight: 600;
-    &--ready { background: $success; color: #0f0f0f; }
-    &--active { background: $accent-hover; color: #fff; }
+    font-weight: $fw-strong;
+    &--ready { background: $text-secondary; color: $on-accent; }
+    &--active { background: $accent; color: $on-accent; }
   }
   &__text { display: flex; flex-direction: column; min-width: 0; strong { font-size: 0.95rem; } }
   &__moves {
@@ -505,7 +502,7 @@ a.btn-primary {
   height: 8px;
   background: $bg-elevated;
   border-radius: 4px;
-  &__fill { height: 100%; background: $accent-hover; border-radius: 4px; }
+  &__fill { height: 100%; background: $accent; border-radius: 4px; }
 }
 .rail__progress { display: flex; flex-direction: column; gap: 0.5rem; margin-top: 0.5rem; padding-top: 0.75rem; border-top: 1px solid $border; }
 
@@ -518,7 +515,7 @@ a.btn-primary {
   min-height: 100px;
   padding: 1.1rem;
   text-align: left;
-  span { color: $text-secondary; font-size: 0.85rem; font-weight: 400; line-height: 1.4; }
+  span { color: $text-secondary; font-size: 0.85rem; font-weight: $fw-body; line-height: 1.4; }
   &--primary { border-color: $accent-hover; background: $bg-elevated; }
 }
 .start-day__options { align-items: stretch; }
@@ -527,7 +524,7 @@ a.btn-primary {
   padding: 1.1rem;
   background: #141414;
   border: 1px solid $border;
-  border-radius: 12px;
+  border-radius: $radius-card;
   &__specs { align-items: flex-end; flex-wrap: wrap; }
   &__narrow { width: 96px; flex-shrink: 0; }
 }
@@ -545,7 +542,7 @@ a.btn-primary {
   &:hover { border-color: $accent; }
   &__name { font-size: 1.6rem; }
 }
-.settings-handle { text-align: center; color: $accent-text; font-weight: 600; }
+.settings-handle { text-align: center; color: $accent-text; font-weight: $fw-strong; }
 
 .day-tabs {
   display: flex;
@@ -559,13 +556,12 @@ a.btn-primary {
   min-height: 44px;
   padding: 0 1rem;
   border-color: $ctl;
-  &--active { background: $accent-hover; border-color: $accent-hover; color: #fff; }
+  &--active { background: $accent; border-color: $accent; color: $on-accent; }
 }
 
 .prog-ex {
-  background: $bg-surface;
-  border: 1px solid $border;
-  border-radius: 12px;
+  @include matte;
+  border-radius: $radius-card;
   &--open { border-color: $ctl; }
   &__row {
     width: 100%;
@@ -580,9 +576,9 @@ a.btn-primary {
     text-align: left;
     color: $text-primary;
   }
-  &__name { font-weight: 600; font-size: 1rem; }
+  &__name { font-weight: $fw-strong; font-size: 1rem; }
   &__right { display: inline-flex; align-items: center; gap: 0.65rem; white-space: nowrap; }
-  &__summary { font-family: 'Barlow Condensed', $main-font; font-weight: 700; text-transform: uppercase; font-size: 1.4rem; }
+  &__summary { font-family: $display-font; font-weight: $fw-display; font-size: 1.5rem; }
   &__body {
     display: flex;
     flex-direction: column;
@@ -605,10 +601,10 @@ a.btn-primary {
     gap: 0.5rem;
     color: $accent-text;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: $fw-strong;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
-  &__link { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; color: $accent-text; font-weight: 600; }
+  &__link { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 44px; color: $accent-text; font-weight: $fw-strong; }
 }
 .prog-ex__body .pinned p { color: $text-primary; }

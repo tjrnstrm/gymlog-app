@@ -8,7 +8,7 @@ import {
   createWorkout,
   deleteSet,
   deleteWorkout,
-  getWorkout,
+  getMyWorkout,
   updateSet,
   updateWorkout,
 } from "../api/workouts";
@@ -151,7 +151,7 @@ export function WorkoutDetailModal({ workout, onClose, onDeleted, onUpdated }: P
         }
       }
 
-      const updated = await getWorkout(workout._id);
+      const updated = await getMyWorkout(workout._id);
       onUpdated(updated);
       setEditMode(false);
     } finally {

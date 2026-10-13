@@ -1,80 +1,62 @@
 import { supabase } from '../lib/supabaseClient';
+import {
+  getMyWorkout as fetchMyWorkout,
+  listMyCatalogExercises,
+  listMyWorkouts,
+  normalizeExerciseName,
+  resolveProgramExercises,
+  workoutSelect,
+} from '@bro-split/database';
+import type { TableUpdate, WorkoutRecord } from '@bro-split/database';
 import type { IWorkout, IWorkoutExercise, ISet } from '../types/Workout';
 
-const WORKOUT_SELECT = '*, exercises:workout_exercises(*, sets(*))';
+type SetRecord = WorkoutRecord['exercises'][number]['sets'][number];
+type WorkoutExerciseRecord = WorkoutRecord['exercises'][number];
 
-interface SetRow {
-  id: string;
-  reps: number;
-  weight: number;
+/** Rows have no position column, so creation time (then id, for ties) is the order. */
+const byCreated = (a: { created_at: string; id: string }, b: { created_at: string; id: string }) =>
+  a.created_at.localeCompare(b.created_at) || a.id.localeCompare(b.id);
+
+function mapSet(row: SetRecord): ISet {
+  return { _id: row.id, reps: row.reps, weight: row.weight, createdAt: row.created_at };
 }
 
-interface WorkoutExerciseRow {
-  id: string;
-  exercise_id: string;
-  exercise_name: string;
-  sets: SetRow[] | null;
-}
-
-interface WorkoutRow {
-  id: string;
-  name: string;
-  gym: string | null;
-  date: string;
-  notes: string | null;
-  exercises: WorkoutExerciseRow[] | null;
-  rating: number | null;
-  is_template: boolean | null;
-  duration_seconds: number | null;
-}
-
-function mapSet(row: SetRow): ISet {
-  return { _id: row.id, reps: row.reps, weight: row.weight };
-}
-
-function mapWorkoutExercise(row: WorkoutExerciseRow): IWorkoutExercise {
+function mapWorkoutExercise(row: WorkoutExerciseRecord): IWorkoutExercise {
   return {
     _id: row.id,
     exerciseId: row.exercise_id,
     exerciseName: row.exercise_name,
-    sets: (row.sets ?? []).map(mapSet),
+    sets: [...(row.sets ?? [])].sort(byCreated).map(mapSet),
+    createdAt: row.created_at,
   };
 }
 
-function mapWorkout(row: WorkoutRow): IWorkout {
+function mapWorkout(row: WorkoutRecord): IWorkout {
   return {
     _id: row.id,
     name: row.name,
     gym: row.gym ?? '',
     date: row.date,
     notes: row.notes ?? '',
-    exercises: (row.exercises ?? []).map(mapWorkoutExercise),
+    exercises: [...(row.exercises ?? [])].sort(byCreated).map(mapWorkoutExercise),
     rating: row.rating ?? undefined,
     isTemplate: row.is_template ?? undefined,
     durationSeconds: row.duration_seconds ?? undefined,
   };
 }
 
-export const getWorkouts = async (): Promise<IWorkout[]> => {
-  const { data, error } = await supabase
-    .from('workouts')
-    .select(WORKOUT_SELECT)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-  return (data ?? []).map(mapWorkout);
-};
+/**
+ * The signed-in user's own workouts. There is deliberately no "all workouts RLS lets me read"
+ * function: a coach can read their clients' workouts, and mixing them into History, templates,
+ * gyms or personal bests is a bug. Reading a client's data goes through the coach helpers.
+ */
+export const getMyWorkouts = async (): Promise<IWorkout[]> => (await listMyWorkouts(supabase)).map(mapWorkout);
 
-export const getWorkout = async (id: string): Promise<IWorkout> => {
-  const { data, error } = await supabase
-    .from('workouts')
-    .select(WORKOUT_SELECT)
-    .eq('id', id)
-    .single();
-  if (error) throw error;
-  return mapWorkout(data);
-};
+/** One of the signed-in user's own workouts; someone else's id behaves like a missing workout. */
+export const getMyWorkout = async (id: string): Promise<IWorkout> => mapWorkout(await fetchMyWorkout(supabase, id));
 
 export const createWorkout = async (data: Partial<IWorkout>): Promise<IWorkout> => {
+  if (!data.name || !data.date) throw new Error('A workout needs a name and a date');
   const { data: row, error } = await supabase
     .from('workouts')
     .insert({
@@ -83,14 +65,14 @@ export const createWorkout = async (data: Partial<IWorkout>): Promise<IWorkout> 
       date: data.date,
       notes: data.notes || null,
     })
-    .select(WORKOUT_SELECT)
+    .select(workoutSelect)
     .single();
   if (error) throw error;
   return mapWorkout(row);
 };
 
 export const updateWorkout = async (id: string, data: Partial<IWorkout>): Promise<IWorkout> => {
-  const payload: Record<string, unknown> = {};
+  const payload: TableUpdate<'workouts'> = {};
   if (data.name !== undefined) payload.name = data.name;
   if (data.gym !== undefined) payload.gym = data.gym;
   if (data.notes !== undefined) payload.notes = data.notes;
@@ -102,7 +84,7 @@ export const updateWorkout = async (id: string, data: Partial<IWorkout>): Promis
     .from('workouts')
     .update(payload)
     .eq('id', id)
-    .select(WORKOUT_SELECT)
+    .select(workoutSelect)
     .single();
   if (error) throw error;
   return mapWorkout(row);
@@ -121,7 +103,7 @@ export const addExercise = async (
     .from('workout_exercises')
     .insert({ workout_id: workoutId, exercise_id: data.exerciseId, exercise_name: data.exerciseName });
   if (error) throw error;
-  return getWorkout(workoutId);
+  return getMyWorkout(workoutId);
 };
 
 export const deleteExercise = async (_workoutId: string, exerciseId: string) => {
@@ -138,7 +120,7 @@ export const addSet = async (
     .from('sets')
     .insert({ workout_exercise_id: exerciseId, reps: data.reps, weight: data.weight });
   if (error) throw error;
-  return getWorkout(workoutId);
+  return getMyWorkout(workoutId);
 };
 
 export const updateSet = async (
@@ -149,7 +131,28 @@ export const updateSet = async (
 ): Promise<IWorkout> => {
   const { error } = await supabase.from('sets').update(data).eq('id', setId);
   if (error) throw error;
-  return getWorkout(workoutId);
+  return getMyWorkout(workoutId);
+};
+
+/**
+ * Adds several sets to one logged exercise in a single insert (a drop set, myo-reps, a warm-up).
+ * Pass explicit createdAt values to control where they sort: rows from one insert share a timestamp.
+ */
+export const addSets = async (
+  workoutId: string,
+  workoutExerciseId: string,
+  rows: { reps: number; weight: number; createdAt?: string }[],
+): Promise<IWorkout> => {
+  const { error } = await supabase.from('sets').insert(
+    rows.map((r) => ({
+      workout_exercise_id: workoutExerciseId,
+      reps: r.reps,
+      weight: r.weight,
+      ...(r.createdAt ? { created_at: r.createdAt } : {}),
+    })),
+  );
+  if (error) throw error;
+  return getMyWorkout(workoutId);
 };
 
 export const deleteSet = async (_workoutId: string, _exerciseId: string, setId: string) => {
@@ -163,23 +166,69 @@ export interface ProgramDayItem {
   reps: string;
 }
 
-/**
- * Turns a coach's program day into a workout ready to log: one workout, its exercises
- * (matched to the shared exercise catalog by name, created if missing) and empty sets.
- */
-export const startWorkoutFromDay = async (dayName: string, items: ProgramDayItem[]): Promise<string> => {
-  const { data: catalog, error: catalogError } = await supabase.from('exercises').select('id, name');
-  if (catalogError) throw catalogError;
-  const byName = new Map((catalog ?? []).map((e: { id: string; name: string }) => [e.name.toLowerCase(), e.id]));
+export interface AmbiguousExercise {
+  /** Normalised name, the key to pass back in `choices`. */
+  key: string;
+  name: string;
+  options: { id: string; name: string; isGlobal?: boolean }[];
+}
 
-  const missing = [...new Set(items.map((i) => i.name).filter((n) => !byName.has(n.toLowerCase())))];
+/** Several of the user's exercises share the name of a programme exercise; they must pick one. */
+export class AmbiguousExercisesError extends Error {
+  ambiguous: AmbiguousExercise[];
+
+  constructor(ambiguous: AmbiguousExercise[]) {
+    super('Some exercises match more than one of your exercises');
+    this.name = 'AmbiguousExercisesError';
+    this.ambiguous = ambiguous;
+  }
+}
+
+/**
+ * Turns a coach's program day into a workout ready to log: one workout, its exercises and empty sets.
+ *
+ * Programme exercises are matched BY NAME against the user's own eligible catalogue (global entries
+ * plus their private ones, never a client's private entry a coach can read). A name is reused only
+ * when exactly one entry matches; if several do, this throws AmbiguousExercisesError and the caller
+ * asks the user, then calls again with `choices` (normalised name -> exercise id). A name with no
+ * match becomes a new private exercise.
+ */
+export const startWorkoutFromDay = async (
+  dayName: string,
+  items: ProgramDayItem[],
+  choices: Record<string, string> = {},
+): Promise<string> => {
+  const catalog = await listMyCatalogExercises(supabase);
+  const resolutions = resolveProgramExercises(
+    items.map((i) => i.name),
+    catalog.map((e) => ({ id: e.id, name: e.name, isGlobal: e.is_global })),
+  );
+  const displayName = new Map(items.map((i) => [normalizeExerciseName(i.name), i.name.trim()]));
+
+  const idByName = new Map<string, string>();
+  const ambiguous: AmbiguousExercise[] = [];
+  const missing: { key: string; name: string }[] = [];
+  resolutions.forEach((resolution, key) => {
+    if (resolution.kind === 'match') {
+      idByName.set(key, resolution.exerciseId);
+    } else if (resolution.kind === 'ambiguous') {
+      const chosen = choices[key];
+      if (chosen && resolution.options.some((o) => o.id === chosen)) idByName.set(key, chosen);
+      else ambiguous.push({ key, name: displayName.get(key) ?? key, options: resolution.options });
+    } else {
+      missing.push({ key, name: displayName.get(key) ?? key });
+    }
+  });
+  if (ambiguous.length > 0) throw new AmbiguousExercisesError(ambiguous);
+
   if (missing.length > 0) {
+    // owner_id defaults to the signed-in user in the database, so these are private entries.
     const { data: created, error: createError } = await supabase
       .from('exercises')
-      .insert(missing.map((name) => ({ name, muscle_groups: [], category: [] })))
+      .insert(missing.map(({ name }) => ({ name, muscle_groups: [], category: [] })))
       .select('id, name');
     if (createError) throw createError;
-    (created ?? []).forEach((e: { id: string; name: string }) => byName.set(e.name.toLowerCase(), e.id));
+    (created ?? []).forEach((e) => idByName.set(normalizeExerciseName(e.name), e.id));
   }
 
   const { data: workout, error: workoutError } = await supabase
@@ -192,18 +241,18 @@ export const startWorkoutFromDay = async (dayName: string, items: ProgramDayItem
   const { data: rows, error: rowsError } = await supabase
     .from('workout_exercises')
     .insert(
-      items.map((i) => ({
-        workout_id: workout.id,
-        exercise_id: byName.get(i.name.toLowerCase()),
-        exercise_name: i.name,
-      })),
+      items.map((i) => {
+        const exerciseId = idByName.get(normalizeExerciseName(i.name));
+        if (!exerciseId) throw new Error(`No exercise for "${i.name}"`);
+        return { workout_id: workout.id, exercise_id: exerciseId, exercise_name: i.name };
+      }),
     )
     .select('id');
   if (rowsError) throw rowsError;
 
-  const sets = (rows ?? []).flatMap((row: { id: string }, index: number) => {
+  const sets = (rows ?? []).flatMap((row, index) => {
     const item = items[index];
-    const reps = Number(item.reps.match(/\d+/)?.[0] ?? 0);
+    const reps = Number(item.reps.match(/d+/)?.[0] ?? 0);
     return Array.from({ length: Math.max(1, item.sets ?? 1) }, () => ({
       workout_exercise_id: row.id,
       reps,

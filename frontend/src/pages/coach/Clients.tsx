@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { getClients, inviteClient, removeLink } from "../../api/coachClients";
+import { cancelInvite, endRelationship, getClients, inviteClient } from "../../api/coachClients";
 import { normalizeUsername, validateUsername } from "../../api/username";
 import type { ICoachClient } from "../../types/Platform";
 
@@ -7,6 +7,8 @@ const STATUS_LABEL: Record<ICoachClient["status"], string> = {
   accepted: "Connected",
   pending: "Invite pending",
   declined: "Declined",
+  ended: "Ended",
+  cancelled: "Cancelled",
 };
 
 const formatDate = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: "numeric", month: "short" });
@@ -53,17 +55,18 @@ export default function Clients() {
     }
   }
 
-  async function handleRemove(client: ICoachClient) {
-    const message =
-      client.status === "accepted"
-        ? `Remove @${client.username} as a client? They keep any programs you already sent.`
-        : `Cancel the invite to @${client.username}?`;
+  async function handleEnd(client: ICoachClient) {
+    const accepted = client.status === "accepted";
+    const message = accepted
+      ? `End coaching with @${client.username}? You'll stop seeing their workouts straight away. They keep any programs you already sent, and you can invite them again later.`
+      : `Cancel the invite to @${client.username}?`;
     if (!window.confirm(message)) return;
     try {
-      await removeLink(client.linkId);
+      if (accepted) await endRelationship(client.linkId);
+      else await cancelInvite(client.linkId);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not remove");
+      setError(err instanceof Error ? err.message : "Could not update");
     }
   }
 
@@ -126,9 +129,11 @@ export default function Clients() {
                   </td>
                   <td className="muted">{formatDate(client.acceptedAt ?? client.createdAt)}</td>
                   <td className="table__actions">
-                    <button type="button" className="btn-small" onClick={() => void handleRemove(client)}>
-                      {client.status === "accepted" ? "Remove" : "Cancel invite"}
-                    </button>
+                    {(client.status === "accepted" || client.status === "pending") && (
+                      <button type="button" className="btn-small" onClick={() => void handleEnd(client)}>
+                        {client.status === "accepted" ? "End coaching" : "Cancel invite"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

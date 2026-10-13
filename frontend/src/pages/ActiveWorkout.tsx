@@ -1,33 +1,43 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { computePersonalBests, computePreviousBests } from "@bro-split/database";
 import { ActiveExercisePicker } from "../components/ActiveExercisePicker";
 import { ActiveWorkoutExercise } from "../components/ActiveWorkoutExercise";
+import type { WorkoutController } from "../components/ActiveWorkoutExercise";
 import { ActiveWorkoutHeader } from "../components/ActiveWorkoutHeader";
 import { FinishWorkoutModal } from "../components/FinishWorkoutModal";
-import { useActiveWorkout } from "../context/ActiveWorkoutContext";
+import { RestCue } from "../components/RestCue";
+import { useActiveWorkout } from "../hooks/useActiveWorkout";
+import { useRestCue } from "../hooks/useRestCue";
+import { useWorkoutMeta } from "../hooks/useWorkoutMeta";
 
 import type { SetValueDraft } from "../components/WorkoutSetRow";
 import {
   addExercise,
   addSet,
+  addSets,
   deleteSet,
   deleteExercise as removeExerciseFromWorkout,
   deleteWorkout,
-  getWorkout,
-  getWorkouts,
+  getMyWorkout,
+  getMyWorkouts,
   updateSet,
   updateWorkout,
 } from "../api/workouts";
 import { useExercises } from "../hooks/useExercises";
+import { REST_SECONDS, buildBlocks, buildClusters, clusterInRound, isPart, partsFor, roundOf, snapWeight } from "../lib/setTypes";
+import type { SetKind } from "../lib/setTypes";
 import type { IExercise } from "../types/Exercise";
-import type { IWorkout, IWorkoutExercise } from "../types/Workout";
-import type { SetType } from "../components/WorkoutSetRow";
+import type { ISet, IWorkout, IWorkoutExercise } from "../types/Workout";
 
 type SwipeStart = {
   setId: string;
   x: number;
   y: number;
 };
+
+const formatKg = (kg: number) => String(Math.round(kg * 100) / 100);
+const isoPlus = (iso: string, ms: number) => new Date(new Date(iso).getTime() + ms).toISOString();
 
 export default function ActiveWorkout() {
   const { id } = useParams();
@@ -38,22 +48,20 @@ export default function ActiveWorkout() {
   const [loading, setLoading] = useState(true);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const timerRef = useRef<number | null>(null);
-  const [setTypes, setSetTypes] = useState<Record<string, SetType>>({});
-  const [completedSetIds, setCompletedSetIds] = useState<Set<string>>(new Set());
   const [exercisePickerOpen, setExercisePickerOpen] = useState(false);
   const [showFinishModal, setShowFinishModal] = useState(false);
   const [leaving, setLeaving] = useState(false);
-  const [setValueDrafts, setSetValueDrafts] = useState<
-    Record<string, SetValueDraft>
-  >({});
+  const [setValueDrafts, setSetValueDrafts] = useState<Record<string, SetValueDraft>>({});
   const [workoutHistory, setWorkoutHistory] = useState<IWorkout[]>([]);
   const [swipeStart, setSwipeStart] = useState<SwipeStart | null>(null);
   const [deletingSetId, setDeletingSetId] = useState<string | null>(null);
+  const meta = useWorkoutMeta(id);
+  const restCue = useRestCue();
 
   useEffect(() => {
     if (!id) return;
 
-    Promise.all([getWorkout(id), getWorkouts()])
+    Promise.all([getMyWorkout(id), getMyWorkouts()])
       .then(([selectedWorkout, workouts]) => {
         setWorkout(selectedWorkout);
         setWorkoutHistory(workouts);
@@ -61,19 +69,20 @@ export default function ActiveWorkout() {
       .finally(() => setLoading(false));
   }, [id]);
 
+  const workoutId = workout?._id;
+  const workoutName = workout?.name;
+  const workoutDate = workout?.date;
   useEffect(() => {
-    if (!id || !workout) return;
-    setActiveWorkout(id, workout.name, workout.date);
-  }, [id, workout?._id, workout?.name, workout?.date, setActiveWorkout]);
+    if (!id || !workoutId || workoutName === undefined || workoutDate === undefined) return;
+    setActiveWorkout(id, workoutName, workoutDate);
+  }, [id, workoutId, workoutName, workoutDate, setActiveWorkout]);
 
   useEffect(() => {
-    if (!workout?.date) return;
+    if (!workoutDate) return;
 
-    const startedAt = new Date(workout.date).getTime();
+    const startedAt = new Date(workoutDate).getTime();
     const updateElapsed = () => {
-      setElapsedSeconds(
-        Math.max(0, Math.floor((Date.now() - startedAt) / 1000)),
-      );
+      setElapsedSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
     };
 
     updateElapsed();
@@ -81,17 +90,14 @@ export default function ActiveWorkout() {
     return () => {
       if (timerRef.current !== null) window.clearInterval(timerRef.current);
     };
-  }, [workout?.date]);
+  }, [workoutDate]);
 
   const addedExerciseIds = useMemo(
-    () =>
-      new Set(workout?.exercises.map((exercise) => exercise.exerciseId) ?? []),
+    () => new Set(workout?.exercises.map((exercise) => exercise.exerciseId) ?? []),
     [workout?.exercises],
   );
 
-  const availableExercises = exercises.filter(
-    (exercise) => !addedExerciseIds.has(exercise._id),
-  );
+  const availableExercises = exercises.filter((exercise) => !addedExerciseIds.has(exercise._id));
 
   const knownGyms = useMemo(
     () => Array.from(new Set(workoutHistory.map((w) => w.gym).filter(Boolean))).sort(),
@@ -109,76 +115,47 @@ export default function ActiveWorkout() {
     return ids;
   }, [workoutHistory, workout]);
 
-  const exercisePbs = useMemo(() => {
-    const pbs = new Map<string, { reps: number; weight: number }>();
-    workoutHistory.forEach((w) => {
-      w.exercises.forEach((ex) => {
-        ex.sets.forEach((set) => {
-          const current = pbs.get(ex.exerciseId);
-          if (!current || set.weight > current.weight || (set.weight === current.weight && set.reps > current.reps)) {
-            pbs.set(ex.exerciseId, { reps: set.reps, weight: set.weight });
-          }
-        });
-      });
-    });
-    return pbs;
-  }, [workoutHistory]);
+  const exercisePbs = useMemo(() => computePersonalBests(workoutHistory), [workoutHistory]);
 
-  const { personalBestSetIds, previousBestRepsPerSet } = useMemo(() => {
-    if (!workout) return { personalBestSetIds: new Set<string>(), previousBestRepsPerSet: new Map<string, number>() };
-
-    const bestRepsByExerciseAndWeight = new Map<string, number>();
-    const personalBests = new Set<string>();
-    const prevBestReps = new Map<string, number>();
-    const previousWorkouts = workoutHistory
-      .filter((historyWorkout) => historyWorkout._id !== workout._id)
-      .sort(
-        (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime(),
-      );
-
-    const trackSet = (
-      exerciseId: string,
-      weight: number,
-      reps: number,
-      setId?: string,
-    ) => {
-      const key = `${exerciseId}:${weight}`;
-      const previousBest = bestRepsByExerciseAndWeight.get(key) ?? 0;
-
-      if (setId && reps > previousBest) {
-        personalBests.add(setId);
-      }
-
-      if (reps > previousBest) {
-        bestRepsByExerciseAndWeight.set(key, reps);
-      }
+  // Warm-ups never count towards a record.
+  const personalBestSetIds = useMemo(() => {
+    if (!workout) return new Set<string>();
+    const workingOnly = {
+      ...workout,
+      exercises: workout.exercises.map((exercise) => ({
+        ...exercise,
+        sets: exercise.sets.filter((set) => (meta.kinds[set._id] ?? "work") !== "warm"),
+      })),
     };
+    return computePreviousBests(workingOnly, workoutHistory).personalBestSetIds;
+  }, [workout, workoutHistory, meta.kinds]);
 
-    previousWorkouts.forEach((historyWorkout) => {
-      historyWorkout.exercises.forEach((exercise) => {
-        exercise.sets.forEach((set) => {
-          trackSet(exercise.exerciseId, set.weight, set.reps);
-        });
-      });
-    });
+  // Last session's sets per exercise: the "previous" column and the starting values for new sets.
+  const previousByExercise = useMemo(() => {
+    const byExercise = new Map<string, { reps: number; weight: number }[]>();
+    const currentTime = workoutDate ? new Date(workoutDate).getTime() : Infinity;
+    [...workoutHistory]
+      .filter((w) => w._id !== workoutId && new Date(w.date).getTime() <= currentTime)
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      .forEach((w) =>
+        w.exercises.forEach((exercise) => {
+          if (exercise.sets.length > 0) {
+            byExercise.set(exercise.exerciseId, exercise.sets.map((s) => ({ reps: s.reps, weight: s.weight })));
+          }
+        }),
+      );
+    return byExercise;
+  }, [workoutHistory, workoutId, workoutDate]);
 
-    workout.exercises.forEach((exercise) => {
-      exercise.sets.forEach((set) => {
-        const key = `${exercise.exerciseId}:${set.weight}`;
-        const previousBest = bestRepsByExerciseAndWeight.get(key) ?? 0;
-        if (previousBest > 0) {
-          prevBestReps.set(set._id, previousBest);
-        }
-        trackSet(exercise.exerciseId, set.weight, set.reps, set._id);
-      });
-    });
-
-    return { personalBestSetIds: personalBests, previousBestRepsPerSet: prevBestReps };
-  }, [workout, workoutHistory]);
+  const blocks = useMemo(
+    () => (workout ? buildBlocks(workout.exercises, meta.groups) : []),
+    [workout, meta.groups],
+  );
 
   const handleRemoveExercise = async (workoutExerciseId: string) => {
     if (!id) return;
     await removeExerciseFromWorkout(id, workoutExerciseId);
+    meta.unlink(workoutExerciseId);
     setWorkout((current) =>
       current
         ? { ...current, exercises: current.exercises.filter((e) => e._id !== workoutExerciseId) }
@@ -189,10 +166,12 @@ export default function ActiveWorkout() {
   const handleChangeExercise = async (workoutExercise: IWorkoutExercise, newExercise: IExercise) => {
     if (!id) return;
     await removeExerciseFromWorkout(id, workoutExercise._id);
+    meta.unlink(workoutExercise._id);
     const updated = await addExercise(id, { exerciseId: newExercise._id, exerciseName: newExercise.name });
     const newWorkoutExercise = updated.exercises.find((e) => e.exerciseId === newExercise._id);
+    const first = previousByExercise.get(newExercise._id)?.[0];
     const withSet = newWorkoutExercise
-      ? await addSet(id, newWorkoutExercise._id, { reps: 1, weight: 0 })
+      ? await addSet(id, newWorkoutExercise._id, first ?? { reps: 1, weight: 0 })
       : updated;
     setWorkout(withSet);
   };
@@ -218,23 +197,25 @@ export default function ActiveWorkout() {
       exerciseName: exercise.name,
     });
 
-    const newExercise = updated.exercises.find(e => e.exerciseId === exercise._id);
+    const newExercise = updated.exercises.find((e) => e.exerciseId === exercise._id);
+    // Start from what you did last time, so the usual session is just ticking boxes.
+    const first = previousByExercise.get(exercise._id)?.[0];
     const withSet = newExercise
-      ? await addSet(id, newExercise._id, { reps: 0, weight: 0 })
+      ? await addSet(id, newExercise._id, first ?? { reps: 0, weight: 0 })
       : updated;
 
     setWorkout(withSet);
     setExercisePickerOpen(false);
   };
 
-  const handleWorkoutNameChange = (name: string) => {
-    setWorkout((current) => (current ? { ...current, name } : current));
-  };
-
   const handleGymChange = async (gym: string) => {
     if (!id) return;
     const updated = await updateWorkout(id, { gym });
     setWorkout(updated);
+  };
+
+  const handleWorkoutNameChange = (name: string) => {
+    setWorkout((current) => (current ? { ...current, name } : current));
   };
 
   const handleWorkoutNameCommit = async (name: string) => {
@@ -251,22 +232,147 @@ export default function ActiveWorkout() {
     setWorkout(updated);
   };
 
-  const handleAddSet = async (exercise: IWorkoutExercise) => {
+  /** Adds a working set, a warm-up, a drop set or myo-reps to an exercise. */
+  const handleAddSet = async (exercise: IWorkoutExercise, kind: "work" | "warm" | "drop" | "myo") => {
     if (!id) return;
 
-    const lastSet = exercise.sets[exercise.sets.length - 1];
-    const reps = lastSet?.reps ?? 1;
-    const weight = lastSet?.weight ?? 0;
+    const lastWorking = [...exercise.sets]
+      .reverse()
+      .find((set) => !isPart(meta.kinds[set._id] ?? "work") && (meta.kinds[set._id] ?? "work") !== "warm");
+    const base =
+      lastWorking ??
+      exercise.sets[exercise.sets.length - 1] ??
+      previousByExercise.get(exercise.exerciseId)?.[0] ?? { reps: 0, weight: 0 };
 
-    const updated = await addSet(id, exercise._id, { reps, weight });
+    // Rows added together share a timestamp, so give them explicit, increasing ones that sort after
+    // the existing sets (relative to their times, not this device's clock).
+    const anchor = exercise.sets[exercise.sets.length - 1]?.createdAt ?? exercise.createdAt;
+    let rows: { reps: number; weight: number; createdAt?: string }[];
+    if (kind === "work") {
+      rows = [{ reps: base.reps, weight: base.weight }];
+    } else if (kind === "warm") {
+      const before = exercise.sets[0]?.createdAt ?? anchor;
+      rows = [
+        { reps: 10, weight: snapWeight(base.weight * 0.5), createdAt: isoPlus(before, exercise.sets.length ? -1000 : 1) },
+      ];
+    } else {
+      const top = { reps: kind === "myo" ? 15 : base.reps, weight: base.weight };
+      rows = [top, ...partsFor(kind, top)].map((row, index) => ({ ...row, createdAt: isoPlus(anchor, index + 1) }));
+    }
+
+    const knownIds = new Set(exercise.sets.map((set) => set._id));
+    const updated = await addSets(id, exercise._id, rows);
     setWorkout(updated);
+
+    const created = (updated.exercises.find((e) => e._id === exercise._id)?.sets ?? []).filter(
+      (s) => !knownIds.has(s._id),
+    );
+    if (kind === "warm" && created[0]) meta.setKinds({ [created[0]._id]: "warm" });
+    if ((kind === "drop" || kind === "myo") && created.length > 0) {
+      const part: SetKind = kind === "drop" ? "drop-part" : "myo-part";
+      meta.setKinds(Object.fromEntries(created.map((s, i) => [s._id, i === 0 ? kind : part])));
+    }
   };
 
-  const handleSetValueChange = (
-    setId: string,
-    field: "reps" | "weight",
-    value: string,
+  /** Changes the type of the set that starts a cluster (adding or removing its parts), or deletes it. */
+  const handleSetKind = async (
+    exercise: IWorkoutExercise,
+    top: ISet,
+    kind: "work" | "warm" | "drop" | "myo" | "delete",
   ) => {
+    if (!id) return;
+    const cluster = buildClusters(exercise, meta.kinds).find((cl) => cl.sets[0]._id === top._id);
+    if (!cluster) return;
+    const parts = cluster.sets.slice(1);
+
+    if (kind === "delete") {
+      await Promise.all(cluster.sets.map((set) => deleteSet(id, exercise._id, set._id)));
+      const removed = new Set(cluster.sets.map((set) => set._id));
+      setWorkout((current) =>
+        current
+          ? {
+              ...current,
+              exercises: current.exercises.map((e) =>
+                e._id === exercise._id ? { ...e, sets: e.sets.filter((s) => !removed.has(s._id)) } : e,
+              ),
+            }
+          : current,
+      );
+      meta.forget([...removed]);
+      return;
+    }
+    if (cluster.kind === kind) return;
+
+    if (parts.length > 0) await Promise.all(parts.map((set) => deleteSet(id, exercise._id, set._id)));
+    meta.forget(parts.map((set) => set._id));
+
+    const known = new Set(exercise.sets.map((set) => set._id));
+    let updated: IWorkout;
+    if (kind === "drop" || kind === "myo") {
+      const rows = partsFor(kind, { reps: top.reps, weight: top.weight }).map((row, index) => ({
+        ...row,
+        createdAt: isoPlus(top.createdAt, index + 1),
+      }));
+      updated = await addSets(id, exercise._id, rows);
+    } else {
+      updated = await getMyWorkout(id);
+    }
+    setWorkout(updated);
+
+    const created = (updated.exercises.find((e) => e._id === exercise._id)?.sets ?? []).filter(
+      (s) => !known.has(s._id),
+    );
+    const partKind: SetKind = kind === "drop" ? "drop-part" : "myo-part";
+    meta.setKinds({ [top._id]: kind, ...Object.fromEntries(created.map((s) => [s._id, partKind])) });
+  };
+
+  /** What to do next after ticking a set: keep going (drop, superset), rest a short while, or rest. */
+  const announceAfterTick = (exercise: IWorkoutExercise, set: ISet) => {
+    const isDone = (s: ISet) => s._id === set._id || meta.doneIds.has(s._id);
+    const clusters = buildClusters(exercise, meta.kinds);
+    const cluster = clusters.find((cl) => cl.sets.some((s) => s._id === set._id));
+    if (!cluster) return;
+    const round = roundOf(clusters, cluster);
+
+    const position = cluster.sets.findIndex((s) => s._id === set._id);
+    const nextPart = cluster.sets.slice(position + 1).find((s) => !isDone(s));
+    if (nextPart && cluster.kind === "drop") {
+      restCue.start(`Drop to ${formatKg(nextPart.weight)} kg now. No rest.`, 0);
+      return;
+    }
+    if (nextPart && cluster.kind === "myo") {
+      restCue.start(`Myo mini-set. Rest ${REST_SECONDS.myo} s, then go again.`, REST_SECONDS.myo);
+      return;
+    }
+    if (!cluster.sets.every(isDone)) return;
+
+    const block = blocks.find((b) => b.some((e) => e._id === exercise._id));
+    if (block && block.length > 1) {
+      const at = block.findIndex((e) => e._id === exercise._id);
+      const nextExercise = block.slice(at + 1).find((e) => {
+        const other = clusterInRound(buildClusters(e, meta.kinds), round);
+        return other && !other.sets.every(isDone);
+      });
+      if (nextExercise) {
+        restCue.start(`Superset: now ${nextExercise.exerciseName}. No rest.`, 0);
+      } else {
+        restCue.start("Round done. Rest", REST_SECONDS.work);
+      }
+      return;
+    }
+    restCue.start(
+      cluster.kind === "warm" ? "Warm-up done. Rest" : "Rest",
+      cluster.kind === "warm" ? REST_SECONDS.warm : REST_SECONDS.work,
+    );
+  };
+
+  const handleToggleDone = (exercise: IWorkoutExercise, set: ISet) => {
+    const wasDone = meta.doneIds.has(set._id);
+    meta.toggleDone(set._id);
+    if (!wasDone) announceAfterTick(exercise, set);
+  };
+
+  const handleSetValueChange = (setId: string, field: "reps" | "weight", value: string) => {
     setSetValueDrafts((drafts) => ({
       ...drafts,
       [setId]: {
@@ -274,6 +380,14 @@ export default function ActiveWorkout() {
         [field]: value,
       },
     }));
+  };
+
+  const clearDraft = (setId: string) => {
+    setSetValueDrafts((drafts) => {
+      const rest = { ...drafts };
+      delete rest[setId];
+      return rest;
+    });
   };
 
   const handleSetValueCommit = async (
@@ -285,14 +399,10 @@ export default function ActiveWorkout() {
     if (!id) return;
 
     const numericValue = Number(value);
-    const isInvalid = field === "reps" ? numericValue <= 0 : numericValue < 0;
-    if (!Number.isFinite(numericValue) || isInvalid) {
-      const updated = await getWorkout(id);
+    if (value === "" || !Number.isFinite(numericValue) || numericValue < 0) {
+      const updated = await getMyWorkout(id);
       setWorkout(updated);
-      setSetValueDrafts((drafts) => {
-        const { [setId]: _removed, ...rest } = drafts;
-        return rest;
-      });
+      clearDraft(setId);
       return;
     }
 
@@ -300,10 +410,7 @@ export default function ActiveWorkout() {
       [field]: numericValue,
     });
     setWorkout(updated);
-    setSetValueDrafts((drafts) => {
-      const { [setId]: _removed, ...rest } = drafts;
-      return rest;
-    });
+    clearDraft(setId);
   };
 
   const handleDeleteSet = async (exerciseId: string, setId: string) => {
@@ -312,6 +419,7 @@ export default function ActiveWorkout() {
     setDeletingSetId(setId);
     try {
       await deleteSet(id, exerciseId, setId);
+      meta.forget([setId]);
       setWorkout((current) => {
         if (!current) return current;
 
@@ -330,24 +438,6 @@ export default function ActiveWorkout() {
     } finally {
       setDeletingSetId(null);
     }
-  };
-
-  const handleCycleSetType = (setId: string) => {
-    setSetTypes((prev) => {
-      const current = prev[setId] ?? "normal";
-      const next: SetType =
-        current === "normal" ? "warmup" : current === "warmup" ? "drop" : "normal";
-      return { ...prev, [setId]: next };
-    });
-  };
-
-  const handleToggleComplete = (setId: string) => {
-    setCompletedSetIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(setId)) next.delete(setId);
-      else next.add(setId);
-      return next;
-    });
   };
 
   const handleMinimize = () => {
@@ -371,12 +461,7 @@ export default function ActiveWorkout() {
     navigate("/");
   };
 
-  const handleSwipeEnd = (
-    exerciseId: string,
-    setId: string,
-    x: number,
-    y: number,
-  ) => {
+  const handleSwipeEnd = (exercise: IWorkoutExercise, setId: string, x: number, y: number) => {
     if (!swipeStart || swipeStart.setId !== setId) return;
 
     const deltaX = x - swipeStart.x;
@@ -384,7 +469,7 @@ export default function ActiveWorkout() {
     setSwipeStart(null);
 
     if (deltaX > 80 && deltaY < 50) {
-      void handleDeleteSet(exerciseId, setId);
+      void handleDeleteSet(exercise._id, setId);
     }
   };
 
@@ -400,6 +485,37 @@ export default function ActiveWorkout() {
       </div>
     );
   }
+
+  const nextExerciseOf = (exercise: IWorkoutExercise) =>
+    workout.exercises[workout.exercises.findIndex((e) => e._id === exercise._id) + 1];
+
+  const controller: WorkoutController = {
+    kinds: meta.kinds,
+    doneIds: meta.doneIds,
+    drafts: setValueDrafts,
+    deletingSetId,
+    personalBestSetIds,
+    previousSets: (exerciseId) => previousByExercise.get(exerciseId) ?? [],
+    changeExercises: availableExercises,
+    fullExercise: (exerciseId) => exercises.find((e) => e._id === exerciseId),
+    nextExercise: nextExerciseOf,
+    onSwipeStart: (setId, x, y) => setSwipeStart({ setId, x, y }),
+    onSwipeEnd: handleSwipeEnd,
+    onSwipeCancel: () => setSwipeStart(null),
+    onValueChange: handleSetValueChange,
+    onValueCommit: (exercise, setId, field, value) => void handleSetValueCommit(exercise._id, setId, field, value),
+    onToggleDone: handleToggleDone,
+    onSetKind: (exercise, set, kind) => void handleSetKind(exercise, set, kind),
+    onAddSet: (exercise, kind) => void handleAddSet(exercise, kind),
+    onPairWithNext: (exercise) => {
+      const next = nextExerciseOf(exercise);
+      if (next) meta.link(exercise._id, next._id);
+    },
+    onRemoveSuperset: (exercise) => meta.unlink(exercise._id),
+    onRemoveExercise: (exercise) => void handleRemoveExercise(exercise._id),
+    onChangeExercise: (exercise, newExercise) => void handleChangeExercise(exercise, newExercise),
+    onExerciseUpdated: (exercise, updated) => handleExerciseUpdated(exercise._id, updated),
+  };
 
   return (
     <div className={`active-workout${leaving ? " active-workout--leaving" : ""}`}>
@@ -428,39 +544,13 @@ export default function ActiveWorkout() {
             <p>Add an exercise to start logging sets</p>
           </div>
         ) : (
-          workout.exercises.map((exercise) => {
-            return (
-              <ActiveWorkoutExercise
-                key={exercise._id}
-                exercise={exercise}
-                setValueDrafts={setValueDrafts}
-                deletingSetId={deletingSetId}
-                personalBestSetIds={personalBestSetIds}
-                previousBestRepsPerSet={previousBestRepsPerSet}
-                setTypes={setTypes}
-                completedSetIds={completedSetIds}
-                onCycleSetType={handleCycleSetType}
-                onToggleComplete={handleToggleComplete}
-                onAddSet={() => handleAddSet(exercise)}
-                fullExercise={exercises.find((e) => e._id === exercise.exerciseId)}
-                changeExercises={availableExercises}
-                onRemoveExercise={() => handleRemoveExercise(exercise._id)}
-                onChangeExercise={(newExercise) => handleChangeExercise(exercise, newExercise)}
-                onExerciseUpdated={(updated) => handleExerciseUpdated(exercise._id, updated)}
-                onSetValueChange={handleSetValueChange}
-                onSetValueCommit={(setId, field, value) =>
-                  handleSetValueCommit(exercise._id, setId, field, value)
-                }
-                onSwipeStart={(setId, x, y) =>
-                  setSwipeStart({ setId, x, y })
-                }
-                onSwipeEnd={(setId, x, y) =>
-                  handleSwipeEnd(exercise._id, setId, x, y)
-                }
-                onSwipeCancel={() => setSwipeStart(null)}
-              />
-            );
-          })
+          blocks.map((block) => (
+            <ActiveWorkoutExercise
+              key={block.map((exercise) => exercise._id).join("+")}
+              exercises={block}
+              controller={controller}
+            />
+          ))
         )}
       </div>
 
@@ -474,6 +564,8 @@ export default function ActiveWorkout() {
         gym={workout.gym}
         gymExerciseIds={gymExerciseIds}
       />
+
+      {restCue.cue && <RestCue cue={restCue.cue} onStop={restCue.stop} onExtend={restCue.extend} />}
 
       <div className="active-workout__bottom-actions">
         <button type="button" className="btn-success" onClick={() => setShowFinishModal(true)}>

@@ -1,14 +1,9 @@
+import { listMyCatalogExercises } from '@bro-split/database';
+import type { TableRow, TableUpdate } from '@bro-split/database';
 import { supabase } from '../lib/supabaseClient';
 import type { IExercise } from '../types/Exercise';
 
-interface ExerciseRow {
-  id: string;
-  name: string;
-  muscle_groups: string[] | null;
-  category: string[] | null;
-  brand: string | null;
-  base_exercise_id: string | null;
-}
+type ExerciseRow = TableRow<'exercises'>;
 
 function mapExercise(row: ExerciseRow): IExercise {
   return {
@@ -18,14 +13,17 @@ function mapExercise(row: ExerciseRow): IExercise {
     category: row.category ?? [],
     brand: row.brand ?? undefined,
     baseExercise: row.base_exercise_id ?? null,
+    isGlobal: row.is_global,
+    ownerId: row.owner_id,
   };
 }
 
-export const getExercises = async (): Promise<IExercise[]> => {
-  const { data, error } = await supabase.from('exercises').select('*').order('name');
-  if (error) throw error;
-  return (data ?? []).map(mapExercise);
-};
+/**
+ * The exercises the user can pick from: the shared catalogue plus their own private entries.
+ * (A coach can also read the exercises behind a client's workouts; those are not part of this list.)
+ */
+export const getExercises = async (): Promise<IExercise[]> =>
+  (await listMyCatalogExercises(supabase)).map(mapExercise);
 
 export const getExercise = async (id: string): Promise<IExercise> => {
   const { data, error } = await supabase.from('exercises').select('*').eq('id', id).single();
@@ -33,7 +31,9 @@ export const getExercise = async (id: string): Promise<IExercise> => {
   return mapExercise(data);
 };
 
+/** Creates a PRIVATE exercise. The database sets the owner to the signed-in user. */
 export const createExercise = async (data: Partial<IExercise>): Promise<IExercise> => {
+  if (!data.name) throw new Error('Give the exercise a name');
   const { data: row, error } = await supabase
     .from('exercises')
     .insert({
@@ -49,8 +49,9 @@ export const createExercise = async (data: Partial<IExercise>): Promise<IExercis
   return mapExercise(row);
 };
 
+/** Only the owner can change a private exercise; the database refuses anything else. */
 export const updateExercise = async (id: string, data: Partial<IExercise>): Promise<IExercise> => {
-  const payload: Record<string, unknown> = {};
+  const payload: TableUpdate<'exercises'> = {};
   if (data.name !== undefined) payload.name = data.name;
   if (data.muscleGroups !== undefined) payload.muscle_groups = data.muscleGroups;
   if (data.category !== undefined) payload.category = data.category;

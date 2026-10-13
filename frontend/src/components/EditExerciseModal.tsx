@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { updateExercise, deleteExercise } from '../api/Exercises';
+import { useAuth } from '../hooks/useAuth';
+import { canEditExercise } from '../types/Exercise';
 import type { IExercise } from '../types/Exercise';
 
 const MUSCLE_GROUPS = [
@@ -26,6 +28,8 @@ function toggle(arr: string[], value: string): string[] {
 }
 
 export function EditExerciseModal({ exercise, onClose, onUpdated, onDeleted, exercises = [] }: Props) {
+  const { user } = useAuth();
+  const canEdit = canEditExercise(exercise, user?.id);
   const [name, setName] = useState(exercise.name);
   const [muscleGroups, setMuscleGroups] = useState<string[]>(exercise.muscleGroups ?? []);
   const [category, setCategory] = useState(exercise.category?.[0] ?? '');
@@ -54,6 +58,26 @@ export function EditExerciseModal({ exercise, onClose, onUpdated, onDeleted, exe
     await deleteExercise(exercise._id);
     onDeleted(exercise._id);
     onClose();
+  }
+
+  if (!canEdit) {
+    return (
+      <div className="modal-overlay" onClick={onClose}>
+        <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal__header">
+            <h5>{exercise.name}</h5>
+            <button type="button" className="modal__close" onClick={onClose}>✕</button>
+          </div>
+          <p className="muted">
+            {exercise.isGlobal ? 'This is part of the shared catalogue, so only an admin can change it.' : "This isn't your exercise."}
+          </p>
+          {exercise.muscleGroups.length > 0 && <p>Muscle groups: {exercise.muscleGroups.join(', ')}</p>}
+          {exercise.category.length > 0 && <p>Category: {exercise.category.join(', ')}</p>}
+          {exercise.brand && <p>Brand: {exercise.brand}</p>}
+          <button type="button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
   }
 
   return (
