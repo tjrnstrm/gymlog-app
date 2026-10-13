@@ -1,0 +1,19 @@
+{
+  "name": "@bro-split/database",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Generated database types and typed query helpers shared by the web, mobile and test code.",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.112.4"
+  },
+  "devDependencies": {
+    "typescript": "~6.0.2"
+  }
+}
